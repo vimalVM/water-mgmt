@@ -11,6 +11,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useResponsive } from "../hooks/useResponsive";
 import WaterTank from "../components/WaterTank";
 import PageHeader from "../components/PageHeader";
+import AIForecastWidget from "../components/AIForecastWidget";
 
 // Distinct, well-separated pie colors
 const PIE_COLORS = ["#00C4FF","#FF6B35","#00D97E","#A855F7","#FFD700","#FF4D6D"];
@@ -232,6 +233,9 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* AI Forecast */}
+      <AIForecastWidget />
 
       {/* KPI */}
       <div style={{ display:"grid",
