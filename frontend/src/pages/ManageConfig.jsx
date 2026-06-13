@@ -267,9 +267,9 @@ export default function ManageConfig() {
                 </tr>
               </thead>
               <tbody>
-                {taps.map(tap=>(
+                {taps.map((tap, index)=>(
                   <tr key={tap.tap_id}>
-                    <td style={td(t)}>#{tap.tap_id}</td>
+                    <td style={td(t)}>#{index + 1}</td>
                     <td style={{...td(t),color:t.text,fontWeight:600}}>{tap.tap_name}</td>
                     <td style={td(t)}>{tap.location}</td>
                     <td style={td(t)}>

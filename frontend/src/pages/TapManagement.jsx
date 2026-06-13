@@ -258,9 +258,9 @@ export default function ManagePage() {
                 </tr>
               </thead>
               <tbody>
-                {taps.map(tap=>(
+                {taps.map((tap, index)=>(
                   <tr key={tap.tap_id}>
-                    <td style={tdS(t)}>#{tap.tap_id}</td>
+                    <td style={tdS(t)}>#{index + 1}</td>
                     <td style={{...tdS(t),color:t.text,fontWeight:600}}>{tap.tap_name}</td>
                     <td style={tdS(t)}>{tap.location}</td>
                     <td style={tdS(t)}>
