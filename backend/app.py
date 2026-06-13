@@ -19,6 +19,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 from config import Config
+from ml_models import GradientBoostedForecaster, TapUsagePredictor
 
 app = Flask(__name__)
 
@@ -387,10 +388,10 @@ def dashboard(user_id, current_user_id):
 def forecast(user_id, current_user_id):
     days = int(request.args.get("days", 30))
     db = get_db()
-    
+
     cutoff_date = datetime.date.today() - datetime.timedelta(days=days)
     sys_totals = db.collection('system_daily_totals').where('user_id', '==', user_id).get()
-    
+
     data_points = []
     for doc in sys_totals:
         data = doc.to_dict()
@@ -402,82 +403,96 @@ def forecast(user_id, current_user_id):
                 "date": u_date,
                 "usage": data.get("total_usage", 0.0)
             })
-            
+
     data_points.sort(key=lambda x: x["date"])
-    
+
     if len(data_points) < 3:
         return jsonify({"error": "Not enough historical data to generate a reliable forecast. Please wait a few days.", "points": []}), 400
-        
-    # Linear Regression (Pure Python)
-    # y = mx + b
-    # x = days since start
-    start_date = data_points[0]["date"]
-    
-    X = [(p["date"] - start_date).days for p in data_points]
-    Y = [p["usage"] for p in data_points]
-    
-    N = len(X)
-    sum_x = sum(X)
-    sum_y = sum(Y)
-    sum_xy = sum(x*y for x, y in zip(X, Y))
-    sum_x2 = sum(x**2 for x in X)
-    
-    denominator = (N * sum_x2 - sum_x**2)
-    if denominator == 0:
-        m = 0
-    else:
-        m = (N * sum_xy - sum_x * sum_y) / denominator
-    b = (sum_y - m * sum_x) / N
-    
-    # Predict next 7 days
-    last_date = data_points[-1]["date"]
-    last_x = (last_date - start_date).days
-    
-    predictions = []
-    projected_green_breach = False
-    projected_orange_breach = False
-    
+
     user_doc = db.collection('users').document(user_id).get()
     user_data = user_doc.to_dict() if user_doc.exists else {}
     green_limit, orange_limit = calc_limits(user_data)
-    
-    for i in range(1, 8):
-        pred_date = last_date + datetime.timedelta(days=i)
-        pred_x = last_x + i
-        pred_y = m * pred_x + b
-        pred_y = max(0.0, pred_y) # prevent negative predictions
-        
-        predictions.append({
-            "date": str(pred_date),
-            "usage": round(pred_y, 2),
-            "is_prediction": True
-        })
-        
-        if pred_y > orange_limit:
+    people_count = user_data.get("people_count", 1) or 1
+
+    # ── ML-powered forecast ─────────────────────────────────
+    dates  = [p["date"] for p in data_points]
+    usages = [p["usage"] for p in data_points]
+
+    forecaster = GradientBoostedForecaster()
+    forecaster.train(dates, usages, people_count)
+    predictions = forecaster.predict_next_days(dates, usages, people_count, n_days=7)
+
+    # Breach detection
+    projected_green_breach = False
+    projected_orange_breach = False
+    for p in predictions:
+        if p["usage"] > orange_limit:
             projected_orange_breach = True
-        elif pred_y > green_limit:
+        elif p["usage"] > green_limit:
             projected_green_breach = True
-            
+
     historical = [{
         "date": str(p["date"]),
         "usage": round(p["usage"], 2),
         "is_prediction": False
     } for p in data_points]
-    
+
     if projected_orange_breach:
         warning = "CRITICAL: You are projected to exceed your Orange Limit in the next 7 days! Take immediate action."
     elif projected_green_breach:
         warning = "WARNING: You are projected to exceed your Green Limit in the next 7 days. Consider reducing usage."
     else:
         warning = "Great job! You are projected to stay within your limits for the next 7 days."
-        
+
     return jsonify({
         "historical": historical,
         "predictions": predictions,
         "warning": warning,
         "green_limit": green_limit,
-        "orange_limit": orange_limit
+        "orange_limit": orange_limit,
+        "model_type": forecaster.model_type,
+        "confidence": round(forecaster.r2, 3) if forecaster.r2 is not None else 0.0,
     })
+
+
+@app.route("/tap-limits/<user_id>", methods=["GET"])
+@token_required
+def tap_limits(user_id, current_user_id):
+    db = get_db()
+
+    user_doc = db.collection('users').document(user_id).get()
+    if not user_doc.exists:
+        return jsonify({"error": "User not found"}), 404
+    user_data = user_doc.to_dict()
+    green_limit, orange_limit = calc_limits(user_data)
+    people_count = user_data.get("people_count", 1) or 1
+
+    # Fetch live taps
+    taps_ref = db.collection('taps').where('user_id', '==', user_id).get()
+    taps = []
+    for t in taps_ref:
+        d = t.to_dict()
+        taps.append({
+            "tap_id": d.get("tap_id", t.id),
+            "tap_name": d.get("tap_name", ""),
+            "location": d.get("location", ""),
+            "current_usage": d.get("current_usage", 0.0),
+        })
+
+    # Fetch archive (last 30 days)
+    cutoff_str = str(datetime.date.today() - datetime.timedelta(days=30))
+    arch_ref = db.collection('tap_daily_archive').where('user_id', '==', user_id).get()
+    archive_docs = []
+    for a in arch_ref:
+        doc = a.to_dict()
+        if doc.get("archive_date", "") >= cutoff_str:
+            archive_docs.append(doc)
+
+    predictor = TapUsagePredictor()
+    result = predictor.predict_tap_limits(
+        taps, archive_docs, green_limit, orange_limit, people_count
+    )
+    return jsonify(result)
 
 @app.route("/usage-timeseries/<user_id>", methods=["GET"])
 @token_required

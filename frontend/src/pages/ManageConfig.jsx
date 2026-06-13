@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getTaps, addTap, deleteTap, getUser, updateLimits } from "../api";
+import { getTaps, addTap, deleteTap, getUser, updateLimits, getTapLimits } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import PageHeader from "../components/PageHeader";
@@ -20,6 +20,8 @@ export default function ManageConfig() {
   const [tapMsg,     setTapMsg]     = useState("");
   const [limMsg,     setLimMsg]     = useState("");
   const [adding,     setAdding]     = useState(false);
+  const [aiLimits,   setAiLimits]   = useState(null);
+  const [aiLoading,  setAiLoading]  = useState(true);
 
   const calcGreen  = +(baseGreen  * people).toFixed(1);
   const calcOrange = +(baseOrange * people).toFixed(1);
@@ -41,6 +43,16 @@ export default function ManageConfig() {
   };
 
   useEffect(() => { load(); }, [uid]);
+
+  // Load AI per-tap limits
+  useEffect(() => {
+    if (!uid) return;
+    setAiLoading(true);
+    getTapLimits(uid)
+      .then(res => setAiLimits(res.data))
+      .catch(() => setAiLimits(null))
+      .finally(() => setAiLoading(false));
+  }, [uid, taps.length]);
 
   const addTapSubmit = async (e) => {
     e.preventDefault();
@@ -296,6 +308,89 @@ export default function ManageConfig() {
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      {/* ── AI PER-TAP LIMITS ── */}
+      <div style={card}>
+        <SectionTitle t={t} icon="🤖" text="AI-Recommended Tap Limits" />
+        {aiLoading ? (
+          <div style={{color:t.textMuted,fontSize:14,padding:"20px 0",textAlign:"center"}}>
+            Analyzing tap usage patterns…
+          </div>
+        ) : !aiLimits || !aiLimits.tap_limits || aiLimits.tap_limits.length === 0 ? (
+          <div style={{color:t.textMuted,fontSize:14,padding:"20px 0",textAlign:"center"}}>
+            <div style={{fontSize:28,marginBottom:8}}>📊</div>
+            No tap data available yet. Add taps and let the simulator run to generate AI recommendations.
+          </div>
+        ) : (
+          <>
+            <div style={{
+              display:"flex", alignItems:"center", gap:8, marginBottom:14,
+              padding:"8px 12px", borderRadius:8,
+              background: aiLimits.model_type === "lightgbm" ? "#a855f715" : `${t.cyan}12`,
+              border: `1px solid ${aiLimits.model_type === "lightgbm" ? "#a855f740" : `${t.cyan}35`}`,
+            }}>
+              <span style={{
+                padding:"3px 9px", borderRadius:16, fontSize:11, fontWeight:700,
+                background: aiLimits.model_type === "lightgbm" ? "#a855f720" : `${t.cyan}20`,
+                color: aiLimits.model_type === "lightgbm" ? "#a855f7" : t.cyan,
+              }}>
+                {aiLimits.model_type === "lightgbm" ? "🧠 LightGBM" : "📊 Proportional"}
+              </span>
+              <span style={{color:t.textMuted,fontSize:12}}>
+                Based on last 30 days of usage data · household limits: 🟢 {aiLimits.household_green}L / 🟠 {aiLimits.household_orange}L
+              </span>
+            </div>
+
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:14}}>
+                <thead>
+                  <tr>
+                    {["Tap","Location","Avg Daily (L)","Share","🟢 Green","🟠 Orange"].map(h=>(
+                      <th key={h} style={{color:t.textMuted,textAlign:"left",
+                        padding:"9px 10px",borderBottom:`1px solid ${t.border}`,
+                        fontSize:11,fontWeight:600,letterSpacing:0.6}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {aiLimits.tap_limits.map((tap, i) => {
+                    const sharePct = tap.usage_share_pct || 0;
+                    const barColors = ["#00C4FF","#FF6B35","#00D97E","#A855F7","#FFD700","#FF4D6D"];
+                    const barColor = barColors[i % barColors.length];
+                    return (
+                      <tr key={tap.tap_id || i}>
+                        <td style={{...td(t),color:t.text,fontWeight:600}}>{tap.tap_name}</td>
+                        <td style={td(t)}>{tap.location}</td>
+                        <td style={{...td(t),color:t.cyan,fontWeight:700}}>{tap.avg_daily_usage} L</td>
+                        <td style={td(t)}>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <div style={{width:60,height:7,background:t.border,borderRadius:3,overflow:"hidden"}}>
+                              <div style={{width:`${Math.min(100,sharePct)}%`,height:"100%",
+                                background:barColor,borderRadius:3,
+                                transition:"width 0.5s ease"}} />
+                            </div>
+                            <span style={{fontSize:13,fontWeight:600,color:barColor}}>{sharePct}%</span>
+                          </div>
+                        </td>
+                        <td style={{...td(t),color:t.green,fontWeight:700}}>{tap.recommended_green} L</td>
+                        <td style={{...td(t),color:t.orange,fontWeight:700}}>{tap.recommended_orange} L</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{marginTop:12,padding:"8px 12px",borderRadius:8,
+              background:`${t.cyan}08`,border:`1px solid ${t.border}`,
+              color:t.textMuted,fontSize:12,lineHeight:1.5}}>
+              💡 These are <strong style={{color:t.text}}>AI recommendations</strong> based on your
+              historical usage patterns. Limits shown are proportional shares of your household
+              total ({aiLimits.household_green}L green / {aiLimits.household_orange}L orange).
+            </div>
+          </>
         )}
       </div>
     </div>

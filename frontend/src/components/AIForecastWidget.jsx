@@ -66,7 +66,7 @@ export default function AIForecastWidget() {
 
   // Combine historical and prediction data for Recharts
   const chartData = [];
-  const { historical, predictions, warning, green_limit, orange_limit } = data;
+  const { historical, predictions, warning, green_limit, orange_limit, model_type, confidence } = data;
   
   // Format data for recharts so we can have two separate lines or one continuous line
   historical.forEach(d => {
@@ -97,17 +97,57 @@ export default function AIForecastWidget() {
   const isCritical = warning.includes("CRITICAL");
   const warnColor = isCritical ? t.red : (isWarning ? t.orange : t.green);
 
+  // Model badge info
+  const isLGBM = model_type === "lightgbm";
+  const modelLabel = isLGBM ? "🧠 LightGBM" : "📈 Linear Regression";
+  const modelBadgeColor = isLGBM ? "#a855f7" : t.cyan;
+  const confidencePct = Math.max(0, Math.min(100, Math.round((confidence || 0) * 100)));
+
   const tip = { background: t.card2, border: `1px solid ${t.border}`, borderRadius: 8, color: t.text, fontSize: 14, fontWeight: 600 };
   const tipI = { color: t.text };
   const tipL = { color: t.textMuted, fontWeight: 400 };
 
   return (
     <div style={{ background: t.card, border: `1px solid ${warnColor}40`, borderRadius: 14, padding: "18px 20px", marginBottom: 18 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <span style={{ fontSize: 24 }}>✨</span>
-        <div>
-          <div style={{ color: t.text, fontSize: 16, fontWeight: 700 }}>AI Forecast (7 Days)</div>
-          <div style={{ color: warnColor, fontSize: 14, fontWeight: 600, marginTop: 2 }}>{warning}</div>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+          <span style={{ fontSize: 24 }}>✨</span>
+          <div>
+            <div style={{ color: t.text, fontSize: 16, fontWeight: 700 }}>AI Forecast (7 Days)</div>
+            <div style={{ color: warnColor, fontSize: 14, fontWeight: 600, marginTop: 2 }}>{warning}</div>
+          </div>
+        </div>
+
+        {/* Model badge + confidence */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            padding: "4px 10px", borderRadius: 20,
+            background: `${modelBadgeColor}15`,
+            border: `1px solid ${modelBadgeColor}40`,
+            fontSize: 12, fontWeight: 700, color: modelBadgeColor,
+          }}>
+            {modelLabel}
+          </div>
+          {confidence != null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>
+                Fit: {confidencePct}%
+              </span>
+              <div style={{
+                width: 50, height: 5, borderRadius: 3,
+                background: t.border, overflow: "hidden",
+              }}>
+                <div style={{
+                  width: `${confidencePct}%`, height: "100%",
+                  borderRadius: 3,
+                  background: confidencePct > 70 ? t.green
+                    : confidencePct > 40 ? t.orange : t.red,
+                  transition: "width 0.5s ease",
+                }} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
