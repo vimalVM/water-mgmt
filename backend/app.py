@@ -406,6 +406,17 @@ def forecast(user_id, current_user_id):
 
     data_points.sort(key=lambda x: x["date"])
 
+    # Append today's live usage if not already archived
+    today_date = datetime.date.today()
+    if not any(p["date"] == today_date for p in data_points):
+        taps_ref = db.collection('taps').where('user_id', '==', user_id).get()
+        today_total = sum(t.to_dict().get("current_usage", 0.0) for t in taps_ref)
+        data_points.append({
+            "date": today_date,
+            "usage": today_total
+        })
+        data_points.sort(key=lambda x: x["date"])
+
     if len(data_points) < 3:
         return jsonify({"error": "Not enough historical data to generate a reliable forecast. Please wait a few days.", "points": []}), 400
 

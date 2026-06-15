@@ -10,6 +10,7 @@ venv/
 .env.*
 !.env.example
 firebase_credentials.json
+firebase_credentials_old.json
 
 # Logs
 *.log
