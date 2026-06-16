@@ -61,15 +61,43 @@ def limits_preflight(user_id):
 
 if not firebase_admin._apps:
     cred_path = Config.FIREBASE_CREDENTIALS_PATH
-    if os.path.exists(cred_path):
-        cred = credentials.Certificate(cred_path)
-        firebase_admin.initialize_app(cred)
+    use_emulator = os.getenv("USE_EMULATOR", "false").lower() == "true" or not os.path.exists(cred_path)
+    
+    if use_emulator:
+        print("[FIREBASE] Using Firestore Emulator fallback...")
+        if "FIRESTORE_EMULATOR_HOST" not in os.environ:
+            os.environ["FIRESTORE_EMULATOR_HOST"] = "127.0.0.1:8080"
+        try:
+            from cryptography.hazmat.primitives.asymmetric import rsa
+            from cryptography.hazmat.primitives import serialization
+            pk = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            pem = pk.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            ).decode('utf-8')
+            cred = credentials.Certificate({
+                'type': 'service_account',
+                'project_id': 'demo-water-mgmt',
+                'private_key_id': 'dummy',
+                'private_key': pem,
+                'client_email': 'dummy@demo-water-mgmt.iam.gserviceaccount.com',
+                'client_id': 'dummy',
+                'token_uri': 'https://oauth2.googleapis.com/token'
+            })
+            firebase_admin.initialize_app(cred)
+        except Exception as e:
+            print(f"[FIREBASE] Failed to generate dummy credential: {e}")
     else:
-        print(f"[FIREBASE] WARNING: Credentials not found at {cred_path}")
+        try:
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
+        except Exception as e:
+            print(f"[FIREBASE] Error initializing with {cred_path}: {e}")
 
 def get_db():
     if not firebase_admin._apps:
-        raise Exception(f"Firebase not initialized. Ensure {Config.FIREBASE_CREDENTIALS_PATH} exists.")
+        raise Exception("Firebase not initialized.")
     return firestore.client()
 
 # ─────────────────────────────────────────────────────────────
